@@ -1,0 +1,31 @@
+# ROS 2 build directories
+build/
+install/
+log/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE / Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# LaTeX and Report files (Do not push to GitHub)
+*.tex
+*.pdf
+report.tex
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+
+# System files
+.DS_Store
+Thumbs.db
+
