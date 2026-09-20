@@ -3,7 +3,7 @@
 Dự án thực hiện việc điều khiển cánh tay robot công nghiệp **Universal Robots UR3e** trong môi trường mô phỏng vật lý **Ignition Gazebo (Fortress)** và khung điều khiển chuyển động **MoveIt 2**. Cánh tay robot tự động thoát điểm kỳ dị ban đầu (*Singularity Escape*), định vị khâu tác động cuối (*end-effector tool0*), tiếp cận mặt phẳng vẽ an toàn và di chuyển vẽ chính xác theo quỹ đạo hình học trong không gian Cartesian (quỹ đạo chữ D khép kín / hình tròn). Toàn bộ vệt di chuyển được hiển thị trực quan theo thời gian thực dưới dạng nét mực (Marker Line Strip) trong RViz2.
 
 ###  Video Demo
-* **Video Demo hoạt động:** [Google Drive Link]([https://drive.google.com/drive/folders/YourFolderID](https://drive.google.com/drive/folders/1IeT-tV6a_JuA-gXAOzLQCFsEt0d9lj75)
+* **Video Demo hoạt động:** [Google Drive Link]([https://drive.google.com/drive/folders/YourFolderID](https://drive.google.com/drive/folders/1IeT-tV6a_JuA-gXAOzLQCFsEt0d9lj75))
 
 ---
 
