@@ -126,7 +126,7 @@ Ngay sau khi lệnh chạy:
 
 ---
 
-##  6. Nguyên lý Kỹ thuật cốt lõi
+##  6. Nguyên lý Hoạt Động
 
 ### 1. Singularity Escape (Thoát điểm kỳ dị)
 Khi khởi động trong Gazebo, cánh tay UR3e mặc định ở cấu hình tất cả các góc khớp bằng 0 (cánh tay duỗi thẳng tắp theo phương ngang). Ở tư thế này, ma trận Jacobian bị suy biến (mất bậc tự do), các bộ giải Động học nghịch (IK) sẽ bị lỗi chia cho 0 nếu cố gắng lập kế hoạch Cartesian ngay. Chương trình giải quyết triệt để bằng cách đưa robot về tư thế gập góc trước:
