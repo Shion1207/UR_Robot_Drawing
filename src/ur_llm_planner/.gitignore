@@ -1,0 +1,26 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# ROS 2 build
+build/
+install/
+log/
+
+# LaTeX and Report files (Khong push file bao cao len GitHub)
+report/
+*.tex
+*.pdf
+*.aux
+*.out
+*.toc
+*.synctex.gz
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store

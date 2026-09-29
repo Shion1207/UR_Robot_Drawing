@@ -1,0 +1,44 @@
+# Mo ta moi truong thao tac (dung chung cho skill_server va llm_planner_node).
+# Tat ca toa do tinh trong frame "world" (trung voi base cua robot, mat ban o z = 0).
+# Neu doi vi tri o day thi nho sua tuong ung trong worlds/pick_place.sdf.
+/**:
+  ros__parameters:
+    world_frame: "world"
+
+    # Kich thuoc ban thao tac (hop chu nhat, mat tren o z = 0)
+    table_size: [0.90, 1.00, 0.75]
+    table_center: [0.15, 0.0, -0.375]
+
+    cube_size: 0.04
+
+    object_names: ["red_cube", "yellow_cube", "blue_cube"]
+    objects:
+      red_cube:
+        color: "red"
+        description: "khoi lap phuong mau do / red cube"
+        position: [0.150, -0.260, 0.020]
+      yellow_cube:
+        color: "yellow"
+        description: "khoi lap phuong mau vang / yellow cube"
+        position: [0.246, -0.172, 0.020]
+      blue_cube:
+        color: "blue"
+        description: "khoi lap phuong mau xanh duong / blue cube"
+        position: [0.295, -0.052, 0.020]
+
+    zone_names: ["zone_a", "zone_b", "zone_c", "zone_tmp"]
+    zones:
+      zone_a:
+        description: "vung A / o A / Zone A"
+        position: [0.282, 0.103, 0.0]
+      zone_b:
+        description: "vung B / o B / Zone B"
+        position: [0.212, 0.212, 0.0]
+      zone_c:
+        description: "vung C / o C / Zone C"
+        position: [0.103, 0.282, 0.0]
+      # Vung tam: dat tam vat khi vung dich dang bi vat khac chiem (vd: doi cho 2 vat)
+      zone_tmp:
+        description: "vung tam / temporary zone - chi dung de tam dat vat khi vung dich bi chiem"
+        position: [0.020, -0.300, 0.0]
+    zone_size: 0.08
