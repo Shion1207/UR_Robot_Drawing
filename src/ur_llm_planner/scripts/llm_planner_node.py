@@ -92,6 +92,7 @@ class LLMPlannerNode(Node):
         self.verbose = self.declare_parameter("verbose", False).value
         self.execute = self.declare_parameter("execute", True).value
         self.interactive = self.declare_parameter("interactive", True).value
+        self.require_camera = self.declare_parameter("require_camera", True).value
         self.skill_timeout = self.declare_parameter("skill_timeout", 120.0).value
 
         self.llm = LLMClient(base_url, model, api_key, timeout, temperature, max_tokens)
@@ -150,6 +151,18 @@ class LLMPlannerNode(Node):
             name: (info or {}).get("in_zone") for name, info in objects.items()}
         return held, locations
 
+    def _perception_ready(self) -> bool:
+        """Chi chap nhan state tu camera da thay du nam object it nhat mot lan."""
+        state = self.scene_state or {}
+        return state.get("source") == "camera" and state.get("camera_ready") is True
+
+    def _reject_without_camera(self, command: str) -> bool:
+        if self.require_camera and not self._perception_ready():
+            self._report(command, "PERCEPTION_UNAVAILABLE",
+                         errors=["Camera chua nhan dien du cac block; robot khong lap ke hoach"])
+            return True
+        return False
+
     def print_banner(self):
         if self.student is None:
             print(f"{YELLOW}Chua khai bao student.id - khong co nhiem vu ca nhan{RESET}")
@@ -163,6 +176,8 @@ class LLMPlannerNode(Node):
         if not command:
             return
         print(f"\n{BOLD}USER COMMAND:{RESET}\n{command}")
+        if self._reject_without_camera(command):
+            return
         held, locations = self._held_and_locations()
         messages = build_messages(command, self.objects, self.zones, self.scene_state,
                                   self.student)
@@ -216,6 +231,8 @@ class LLMPlannerNode(Node):
 
     def handle_plan_text(self, text: str, command: str):
         print(f"\n{BOLD}USER COMMAND:{RESET}\n{command}")
+        if self._reject_without_camera(command):
+            return
         held, locations = self._held_and_locations()
         try:
             data = extract_json(text)

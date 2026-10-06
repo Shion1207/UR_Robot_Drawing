@@ -12,7 +12,7 @@
     llm:
       base_url: "http://localhost:20128/v1"
       model: "gemini/gemini-3.5-flash-lite"
-      api_key: "sk-2c23ece34cd0fbee-bgy3md-73f10000"
+      api_key: ""  # Dat NINEROUTER_API_KEY trong terminal, khong commit khoa bi mat
       timeout: 120.0
       max_tokens: 4000
       temperature: 0.0

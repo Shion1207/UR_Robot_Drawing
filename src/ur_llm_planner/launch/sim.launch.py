@@ -14,7 +14,8 @@ import os
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
+from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription,
+                            SetEnvironmentVariable, TimerAction)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution
@@ -25,8 +26,25 @@ from launch_ros.substitutions import FindPackageShare
 WORLD_NAME = "pick_place_world"
 
 
+def package_share_with_file(package, *required_path):
+    """Bo qua overlay bi hong (symlink dut) va tim ban package co file that."""
+    candidates = []
+    try:
+        candidates.append(get_package_share_directory(package))
+    except Exception:  # package co the chi ton tai o prefix sau
+        pass
+    for prefix in os.environ.get("AMENT_PREFIX_PATH", "").split(os.pathsep):
+        share = os.path.join(prefix, "share", package)
+        if share not in candidates:
+            candidates.append(share)
+    for share in candidates:
+        if os.path.isfile(os.path.join(share, *required_path)):
+            return share
+    raise FileNotFoundError(f"Khong tim thay {package}/{'/'.join(required_path)}")
+
+
 def load_yaml(package, *path):
-    with open(os.path.join(get_package_share_directory(package), *path)) as f:
+    with open(os.path.join(package_share_with_file(package, *path), *path)) as f:
         return yaml.safe_load(f)
 
 
@@ -42,8 +60,18 @@ def generate_launch_description():
     gripper_controller_config = PathJoinSubstitution(
         [pkg_share, "config", "gripper_controller.yaml"])
     # Can kinematics.yaml de skill_server tu giai IK (chon cau hinh khop hop ly)
+    moveit_share = package_share_with_file("ur_moveit_config", "config", "kinematics.yaml")
+    # Workspace cu con resource marker ur_moveit_config nhung symlink source da dut. Loai rieng
+    # prefix hong khoi moi truong cua xacro de $(find ur_moveit_config) roi xuong /opt/ros.
+    ament_prefixes = os.environ.get("AMENT_PREFIX_PATH", "").split(os.pathsep)
+    valid_prefixes = [p for p in ament_prefixes if not (
+        os.path.isfile(os.path.join(
+            p, "share", "ament_index", "resource_index", "packages", "ur_moveit_config"))
+        and not os.path.isfile(os.path.join(
+            p, "share", "ur_moveit_config", "srdf", "ur_macro.srdf.xacro")))]
+    clean_ament_path = SetEnvironmentVariable("AMENT_PREFIX_PATH", os.pathsep.join(valid_prefixes))
     kinematics_config = PathJoinSubstitution(
-        [FindPackageShare("ur_moveit_config"), "config", "kinematics.yaml"])
+        [moveit_share, "config", "kinematics.yaml"])
 
     object_names = load_yaml("ur_llm_planner", "config", "scene.yaml")[
         "/**"]["ros__parameters"]["object_names"]
@@ -144,20 +172,24 @@ def generate_launch_description():
         name="rviz2_moveit",
         output="log",
         arguments=["-d", PathJoinSubstitution(
-            [FindPackageShare("ur_moveit_config"), "rviz", "view_robot.rviz"])],
+            [moveit_share, "rviz", "view_robot.rviz"])],
         parameters=moveit_params,
         condition=IfCondition(launch_rviz),
     )
 
-    # 3) Bridge ROS 2 <-> Gazebo: set_pose (dat lai vi tri vat) va gan/nha vat (DetachableJoint)
+    # 3) Bridge ROS 2 <-> Gazebo: camera, set_pose va gan/nha vat (DetachableJoint)
     gripper_topics = [f"/gripper/{name}/{action}@std_msgs/msg/Empty]ignition.msgs.Empty"
                       for name in object_names for action in ("attach", "detach")]
+    camera_topics = [
+        "/overhead_camera/image@sensor_msgs/msg/Image@ignition.msgs.Image",
+        "/overhead_camera/camera_info@sensor_msgs/msg/CameraInfo@ignition.msgs.CameraInfo",
+    ]
     gz_bridge = Node(
         package="ros_gz_bridge",
         executable="parameter_bridge",
         name="gz_gripper_bridge",
         arguments=[f"/world/{WORLD_NAME}/set_pose@ros_gz_interfaces/srv/SetEntityPose"]
-        + gripper_topics,
+        + gripper_topics + camera_topics,
         output="screen",
     )
 
@@ -171,11 +203,23 @@ def generate_launch_description():
                     {"use_sim_time": True, "gz_world_name": WORLD_NAME}],
     )
 
+    # 5) Perception: anh RGB -> pose 5 cube + trang thai zone. Skill server dung pose camera
+    #    cho muc tieu pick; LLM chi nhan ten object/zone, khong nhan toa do.
+    camera_perception = Node(
+        package="ur_llm_planner",
+        executable="camera_perception_node.py",
+        name="camera_perception",
+        output="screen",
+        parameters=[scene_config, {"use_sim_time": True}],
+    )
+
     return LaunchDescription(declared_arguments + [
+        clean_ament_path,
         ur_control,
         gripper_controller_spawner,
         move_group,
         rviz,
         gz_bridge,
+        camera_perception,
         TimerAction(period=startup_delay, actions=[skill_server]),
     ])

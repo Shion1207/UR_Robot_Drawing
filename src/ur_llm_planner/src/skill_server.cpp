@@ -5,7 +5,8 @@
 //   - joint-space planning (OMPL) cho cac chuyen dong lon  -> kiem tra joint limit + collision
 //   - Cartesian path (computeCartesianPath, avoid_collisions = true) cho buoc ha/nang thang dung
 // LLM khong bao gio sinh quy dao / gia tri khop: no chi chon ten skill + tham so (object, zone),
-// con vi tri cu the cua vat va vung duoc lay tu parameter (config/scene.yaml).
+// con vi tri runtime cua vat den tu camera_perception. config/scene.yaml chi cung cap pose
+// spawn/reset va tam cac zone.
 //
 // Gripper: Robotiq 2F-85 (urdf/ur_robotiq.urdf.xacro), diem tham chieu la grasp_tcp (tam kep).
 //   - Ngon kep dong/mo bang gripper_controller (JointTrajectoryController, 6 khop theo he so mimic).
@@ -26,6 +27,7 @@
 #include <moveit_msgs/msg/collision_object.hpp>
 #include <shape_msgs/msg/solid_primitive.hpp>
 #include <geometry_msgs/msg/pose.hpp>
+#include <geometry_msgs/msg/pose_array.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <ros_gz_interfaces/srv/set_entity_pose.hpp>
@@ -63,6 +65,7 @@ constexpr const char * EXECUTION_FAILED = "EXECUTION_FAILED";
 constexpr const char * OBJECT_NOT_HELD = "OBJECT_NOT_HELD";
 constexpr const char * GRIPPER_BUSY = "GRIPPER_BUSY";
 constexpr const char * NO_OBJECT_TO_GRASP = "NO_OBJECT_TO_GRASP";
+constexpr const char * PERCEPTION_UNAVAILABLE = "PERCEPTION_UNAVAILABLE";
 }  // namespace status
 
 struct SkillResult
@@ -130,6 +133,13 @@ public:
       RCLCPP_WARN(node_->get_logger(), "%s", opened.message.c_str());
     }
     resetGazeboObjects();
+
+    rclcpp::SubscriptionOptions camera_options;
+    camera_options.callback_group = skill_group_;
+    camera_pose_sub_ = node_->create_subscription<geometry_msgs::msg::PoseArray>(
+      "camera/object_poses", rclcpp::QoS(1).transient_local().reliable(),
+      [this](const geometry_msgs::msg::PoseArray::SharedPtr msg) {onCameraPoses(msg);},
+      camera_options);
     publishMarkers();
     publishSceneState();
 
@@ -200,10 +210,11 @@ private:
 
     cube_size_ = node_->declare_parameter<double>("cube_size", 0.04);
     zone_size_ = node_->declare_parameter<double>("zone_size", 0.08);
+    camera_required_ = node_->declare_parameter<bool>("camera_required", true);
 
-    const auto object_names = node_->declare_parameter<std::vector<std::string>>(
+    object_names_ = node_->declare_parameter<std::vector<std::string>>(
       "object_names", std::vector<std::string>{});
-    for (const auto & name : object_names) {
+    for (const auto & name : object_names_) {
       const auto p = node_->declare_parameter<std::vector<double>>(
         "objects." + name + ".position", std::vector<double>{});
       objects_[name] = toVec3(p, "objects." + name + ".position");
@@ -415,19 +426,65 @@ private:
     return pose;
   }
 
+  // Camera la nguon toa do runtime. YAML chi dung de spawn/reset vat luc khoi dong.
+  void onCameraPoses(const geometry_msgs::msg::PoseArray::SharedPtr msg)
+  {
+    if (msg->header.frame_id != world_frame_ || msg->poses.size() != object_names_.size()) {
+      RCLCPP_WARN_THROTTLE(node_->get_logger(), *node_->get_clock(), 5000,
+        "camera/object_poses sai frame hoac sai so object");
+      return;
+    }
+
+    bool all_visible = true;
+    bool changed = false;
+    for (std::size_t i = 0; i < object_names_.size(); ++i) {
+      const auto & pose = msg->poses[i];
+      const bool visible = std::isfinite(pose.position.x) && std::isfinite(pose.position.y);
+      object_visible_[object_names_[i]] = visible;
+      if (!visible) {
+        all_visible = false;
+        continue;
+      }
+      if (object_names_[i] == held_object_) {
+        continue;
+      }
+      const Vec3 measured{pose.position.x, pose.position.y, cube_size_ / 2.0};
+      const Vec3 & old = objects_.at(object_names_[i]);
+      const double moved = std::hypot(measured[0] - old[0], measured[1] - old[1]);
+      if (moved < 0.002) {
+        continue;
+      }
+      objects_[object_names_[i]] = measured;
+      planning_scene_.applyCollisionObject(
+        makeBox(object_names_[i], measured, {cube_size_, cube_size_, cube_size_}));
+      changed = true;
+    }
+
+    ++camera_sequence_;
+    camera_ready_ = camera_ready_ || all_visible;
+    camera_all_visible_ = all_visible;
+    if (changed || camera_sequence_ % 10 == 0) {
+      publishSceneState();
+    }
+  }
+
   void publishSceneState()
   {
     std::ostringstream ss;
     ss.setf(std::ios::fixed);
     ss.precision(3);
     ss << "{\"held_object\": " << (held_object_.empty() ? "null" : "\"" + held_object_ + "\"");
+    ss << ", \"source\": \"camera\", \"camera_ready\": "
+       << (camera_ready_ ? "true" : "false") << ", \"all_visible\": "
+       << (camera_all_visible_ ? "true" : "false") << ", \"camera_sequence\": " << camera_sequence_;
     ss << ", \"objects\": {";
     bool first = true;
     for (const auto & kv : objects_) {
       const std::string zone = kv.first == held_object_ ? "" : zoneOf(kv.second);
       ss << (first ? "" : ", ") << "\"" << kv.first << "\": {\"position\": [" << kv.second[0]
          << ", " << kv.second[1] << ", " << kv.second[2] << "], \"in_zone\": "
-         << (zone.empty() ? "null" : "\"" + zone + "\"") << "}";
+         << (zone.empty() ? "null" : "\"" + zone + "\"") << ", \"visible\": "
+         << (object_visible_[kv.first] ? "true" : "false") << "}";
       first = false;
     }
     ss << "}, \"zones\": [";
@@ -582,7 +639,8 @@ private:
   }
 
   // Dua ngon kep toi goc `position` cua robotiq_85_left_knuckle_joint (0 = mo, 0.79 = dong).
-  SkillResult commandGripper(double position, const std::string & what)
+  SkillResult commandGripper(
+    double position, const std::string & what, bool contact_is_success = false)
   {
     if (!gripper_client_->wait_for_action_server(std::chrono::seconds(5))) {
       return {status::FAILED, "Action " + gripper_action_ + " chua san sang "
@@ -608,6 +666,17 @@ private:
     auto result_future = gripper_client_->async_get_result(handle);
     const auto timeout = std::chrono::duration<double>(gripper_motion_time_ + 5.0);
     if (result_future.wait_for(timeout) != std::future_status::ready) {
+      // Khi kep vat, ngon kep co the cham vat truoc khi dat chinh xac joint target.
+      // JointTrajectoryController khi do co the giu goal ACTIVE vo han thay vi tra
+      // SUCCESS. Day la ket qua mong doi cua mot thao tac grasp, khong phai loi.
+      if (contact_is_success) {
+        (void)gripper_client_->async_cancel_goal(handle);
+        RCLCPP_WARN(
+          node_->get_logger(),
+          "Gripper bi vat chan truoc joint target khi '%s'; coi nhu da kep va huy goal",
+          what.c_str());
+        return success(what + " (da cham vat)");
+      }
       return {status::EXECUTION_FAILED, "Het thoi gian cho gripper: " + what};
     }
     const auto result = result_future.get();
@@ -707,7 +776,7 @@ private:
     const Vec3 & p = objects_.at(target);
     r = moveLinear(toolDownPose(p[0], p[1], p[2]), "ha xuong gap " + target);
     if (!r.ok()) {return r;}
-    r = commandGripper(gripper_grasp_position_, "kep " + target);
+    r = commandGripper(gripper_grasp_position_, "kep " + target, true);
     if (!r.ok()) {return r;}
 
     if (!move_group_->attachObject(target, ee_link_, touch_links_)) {
@@ -816,7 +885,12 @@ private:
       req->skill.c_str(), req->object.c_str(), req->zone.c_str());
     SkillResult r;
     try {
-      r = dispatch(req->skill, req->object, req->zone);
+      if (camera_required_ && !camera_ready_ && req->skill != "home") {
+        r = {status::PERCEPTION_UNAVAILABLE,
+          "Camera chua nhan dien du 5 vat; tu choi thao tac dung vi tri vat"};
+      } else {
+        r = dispatch(req->skill, req->object, req->zone);
+      }
     } catch (const std::exception & e) {
       r = {status::FAILED, std::string("Exception: ") + e.what()};
     }
@@ -846,6 +920,7 @@ private:
   rclcpp::CallbackGroup::SharedPtr client_group_;
   rclcpp::CallbackGroup::SharedPtr skill_group_;
   rclcpp::Service<ExecuteSkill>::SharedPtr service_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr camera_pose_sub_;
   rclcpp::Client<SetEntityPose>::SharedPtr gz_client_;
   rclcpp_action::Client<FollowJointTrajectory>::SharedPtr gripper_client_;
   std::map<std::string, rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr> gz_attach_pubs_;
@@ -855,6 +930,8 @@ private:
 
   std::string planning_group_, ee_link_, world_frame_, gz_world_name_;
   bool gz_sync_ = true;
+  bool camera_required_ = true, camera_ready_ = false, camera_all_visible_ = false;
+  std::size_t camera_sequence_ = 0;
   double velocity_scaling_ = 0.3, acceleration_scaling_ = 0.3, planning_time_ = 5.0;
   int planning_retries_ = 3;
   double eef_step_ = 0.005, min_cartesian_fraction_ = 0.98;
@@ -870,6 +947,8 @@ private:
   double gripper_open_position_ = 0.0, gripper_grasp_position_ = 0.43, gripper_motion_time_ = 1.0;
   std::vector<std::string> touch_links_;
 
+  std::vector<std::string> object_names_;
+  std::map<std::string, bool> object_visible_;
   std::map<std::string, Vec3> objects_;
   std::map<std::string, Vec3> zones_;
   std::string held_object_;

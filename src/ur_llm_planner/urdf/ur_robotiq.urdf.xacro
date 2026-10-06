@@ -13,7 +13,8 @@
   <xacro:arg name="name" default="ur"/>
   <xacro:arg name="sim_ignition" default="false"/>
   <xacro:arg name="tf_prefix" default=""/>
-  <xacro:arg name="grasp_objects" default="red_cube yellow_cube blue_cube"/>
+  <xacro:arg name="grasp_objects"
+             default="red_cube yellow_cube blue_cube green_cube purple_cube"/>
 
   <xacro:include filename="$(find ur_description)/urdf/ur.urdf.xacro"/>
   <xacro:include filename="$(find robotiq_description)/urdf/robotiq_2f_85_macro.urdf.xacro"/>

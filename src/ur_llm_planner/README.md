@@ -7,17 +7,19 @@ skill. LLM **không** sinh joint trajectory hay giá trị khớp.
 ```
 Natural Language Command ──► LLM Planner ──► JSON Plan ──► Plan Validator ──► Skill Executor ──► MoveIt 2 ──► UR3/UR3e
    (bàn phím / topic)        (9Router)                      (whitelist)       (/execute_skill)
+Camera RGB ──► nhận dạng 5 màu ──► `/scene_state` ──► LLM prompt + Validator + vị trí gắp
 ```
 
 ## 1. Kiến trúc
 
 | Thành phần | File | Vai trò |
 |---|---|---|
-| Môi trường Gazebo | `worlds/pick_place.sdf` | Bàn thao tác, `red_cube`, `yellow_cube`, `blue_cube` (vật thể động), `zone_a/b/c`, vùng tạm `zone_tmp` |
+| Môi trường Gazebo | `worlds/pick_place.sdf` | Bàn, camera RGB, 5 cube động, 3 zone; `blue_cube` khởi đầu trong `zone_b` để demo vật cản |
+| Camera perception | `scripts/camera_perception_node.py`, `llm_planner/perception.py` | Phân đoạn HSV, chiếu pixel xuống mặt bàn và xác định object/zone |
 | Robot + gripper | `urdf/ur_robotiq.urdf.xacro` | UR3/UR3e + Robotiq 2F-85, TCP `grasp_tcp`, DetachableJoint cho từng khối |
 | MoveIt SRDF | `srdf/ur_robotiq.srdf.xacro` | SRDF của UR + tắt va chạm giữa các khâu gripper |
 | Controller gripper | `config/gripper_controller.yaml` | `gripper_controller` (JointTrajectoryController, 6 khớp ngón) |
-| Khai báo scene | `config/scene.yaml` | Vị trí vật/vùng (parameter), dùng chung cho mọi node |
+| Khai báo scene | `config/scene.yaml` | Pose spawn/reset, vị trí zone, màu object và thông số camera |
 | Thông tin sinh viên | `config/student_config.yaml` | `student.name`, `student.id` → nhiệm vụ cá nhân |
 | Nhiệm vụ cá nhân | `llm_planner/student.py` | `P = XX mod 6` → vật nào ở zone A/B/C |
 | Skill Server (C++) | `src/skill_server.cpp` | Thực thi skill bằng MoveIt 2, trả về trạng thái |
@@ -26,7 +28,7 @@ Natural Language Command ──► LLM Planner ──► JSON Plan ──► Pla
 | Prompt | `llm_planner/prompt.py` | Mô tả skill/vật/vùng + quy tắc, yêu cầu trả về JSON |
 | Plan Validator | `llm_planner/plan_validator.py` | Kiểm tra kế hoạch, từ chối skill/object/zone không hợp lệ |
 | LLM Planner node | `scripts/llm_planner_node.py` | Nhận câu lệnh → LLM → Validator → gọi từng skill |
-| Launch | `launch/sim.launch.py` | Gazebo + ros2_control + MoveIt 2 + bridge + skill_server |
+| Launch | `launch/sim.launch.py` | Gazebo + camera bridge + perception + ros2_control + MoveIt 2 + skill_server |
 
 ### 1.1. Robot Skills
 
@@ -43,7 +45,7 @@ Natural Language Command ──► LLM Planner ──► JSON Plan ──► Pla
 Mỗi skill trả về một trong các trạng thái:
 
 `SUCCESS`, `FAILED`, `INVALID_SKILL`, `INVALID_OBJECT`, `INVALID_ZONE`, `PLANNING_FAILED`,
-`EXECUTION_FAILED`, `OBJECT_NOT_HELD`, `GRIPPER_BUSY`, `NO_OBJECT_TO_GRASP`.
+`EXECUTION_FAILED`, `OBJECT_NOT_HELD`, `GRIPPER_BUSY`, `NO_OBJECT_TO_GRASP`, `PERCEPTION_UNAVAILABLE`.
 
 ### 1.2. An toàn chuyển động
 
@@ -53,7 +55,7 @@ Mỗi skill trả về một trong các trạng thái:
   và không chạm bàn. Nếu OMPL vẫn không lập được kế hoạch tới nghiệm đó, skill server giải lại IK
   từ seed khác (tối đa 22 lần).
 - **Self-collision**: kiểm tra bằng SRDF của `ur_moveit_config`.
-- **Va chạm môi trường**: bàn và 3 khối được thêm vào planning scene dưới dạng collision object.
+- **Va chạm môi trường**: bàn và 5 khối được thêm vào planning scene dưới dạng collision object.
   Gripper là một phần của robot trong MoveIt. Khối đang cầm được *attach* vào `grasp_tcp`, nên
   MoveIt tính cả gripper và khối đó khi kiểm tra va chạm.
 - Các đoạn hạ/nâng thẳng đứng dùng `computeCartesianPath(..., avoid_collisions = true)`. Nếu
@@ -77,7 +79,18 @@ Robotiq 2F-85 gắn tại `tool0`. Mô hình lấy từ gói `robotiq_descriptio
 - Trong MoveIt: `attachObject` / `detachObject` khối vào `grasp_tcp`, với `touch_links` là các khâu
   của gripper.
 
-### 1.4. Plan Validator
+### 1.4. Camera và trạng thái môi trường
+
+Camera RGB cố định nhìn vuông góc xuống bàn; hệ thống không lấy pose runtime của cube từ YAML.
+`scene.yaml` chỉ chứa pose để spawn/reset mô phỏng và tâm các zone đã biết.
+
+- Gazebo phát `/overhead_camera/image` và `/overhead_camera/camera_info`.
+- Perception phân đoạn HSV theo năm màu, lấy tâm blob và dùng mô hình pinhole để chiếu xuống bàn.
+- `/camera/object_poses` cấp pose đo được cho Skill Server; `/camera/scene_state` dùng để quan sát.
+- Skill Server cập nhật collision object, suy ra `in_zone` và phát `/scene_state` với `source=camera`.
+- Planner và Skill Server đều trả `PERCEPTION_UNAVAILABLE` nếu camera chưa thấy đủ năm cube.
+
+### 1.5. Plan Validator
 
 Validator dùng cơ chế **whitelist**. Chỉ cần một bước sai là **toàn bộ** kế hoạch bị từ chối,
 robot không chạy dù chỉ một phần:
@@ -94,10 +107,10 @@ robot không chạy dù chỉ một phần:
   chèn bước dọn vùng (chuyển vật đang chiếm sang vùng đích của nó hoặc sang `zone_tmp`).
 
 Khi kế hoạch bị từ chối, planner gửi danh sách lỗi lại cho LLM để nó tự sửa (tối đa
-`llm.max_repair_attempts` lần, mặc định 1). Kế hoạch sau khi sửa vẫn phải qua validator.
+`llm.max_repair_attempts` lần, mặc định 2). Kế hoạch sau khi sửa vẫn phải qua validator.
 Skill server cũng kiểm tra lại skill/object/zone một lần nữa (phòng thủ hai lớp).
 
-### 1.5. Cá nhân hoá theo MSSV
+### 1.6. Cá nhân hoá theo MSSV
 
 Khai báo trong `config/student_config.yaml` (nhớ thay bằng tên và MSSV **thật** của bạn):
 
@@ -132,7 +145,7 @@ PERSONAL TASK: zone_a <- blue_cube | zone_b <- yellow_cube | zone_c <- red_cube
 Bảng gán này được đưa vào system prompt. Nhờ vậy LLM tự lập kế hoạch cho các lệnh như
 `Arrange all objects according to my student ID.`
 
-### 1.6. Vùng đích bị chiếm (mức nâng cao)
+### 1.7. Vùng đích bị chiếm
 
 - Prompt cho LLM biết vật nào đang ở vùng nào và vùng nào đang trống. Chỉ có tên vùng, không
   có toạ độ.
@@ -141,28 +154,31 @@ Bảng gán này được đưa vào system prompt. Nhờ vậy LLM tự lập k
 - Validator kiểm tra lại quy tắc này. Nếu LLM sai, lỗi được gửi lại để LLM sửa
   (`llm.max_repair_attempts` = 2).
 
-Ví dụ khi `red_cube` đang nằm ở `zone_b` (MSSV 23020123):
+Scene mặc định đặt `blue_cube` trong `zone_b`. Với lệnh `Put the red cube in Zone B`, kế hoạch phải là:
 
 ```
-pick(red_cube) -> place(red_cube, zone_c)        # dọn zone_b, red về luôn đích của nó
-pick(blue_cube) -> place(blue_cube, zone_a)
-pick(yellow_cube) -> place(yellow_cube, zone_b)
+pick(blue_cube) -> place(blue_cube, zone_tmp)    # dọn vật đang chiếm chỗ
+pick(red_cube) -> place(red_cube, zone_b)
 home()
 ```
 
-### 1.7. Đầu ra trên terminal
+### 1.8. Đầu ra trên terminal
 
 ```
 USER COMMAND:
 Put the red cube in zone B.
 
 LLM PLAN:
+    pick(blue_cube)
+    place(blue_cube, zone_tmp)
     pick(red_cube)
     place(red_cube, zone_b)
     home()
-VALIDATOR: plan hop le (3 buoc)
+VALIDATOR: plan hop le (5 buoc)
 
 EXECUTION:
+pick(blue_cube) ........... SUCCESS
+place(blue_cube, zone_tmp)  SUCCESS
 pick(red_cube) ............ SUCCESS
 place(red_cube, zone_b) ... SUCCESS
 home() .................... SUCCESS
@@ -180,9 +196,9 @@ Yêu cầu: Ubuntu 22.04 (hoặc WSL2 + Ubuntu 22.04), ROS 2 Humble, Gazebo Fort
 `Universal_Robots_ROS2_Driver` và `ur_simulation_gz` (đã có trong workspace này).
 
 ```bash
-cd ~/ur_ws
+cd ~/workspaces/ur_gz
 source /opt/ros/humble/setup.bash
-sudo apt install ros-humble-robotiq-description   # mô hình Robotiq 2F-85
+sudo apt install ros-humble-robotiq-description python3-opencv python3-numpy
 rosdep install --ignore-src --from-paths src -y
 colcon build --packages-select ur_llm_planner
 source install/setup.bash
@@ -210,22 +226,33 @@ source install/setup.bash
 
 ## 3. Chạy
 
-**Terminal 1** — mô phỏng + MoveIt 2 + skill server:
+**Terminal 1** — mô phỏng + MoveIt 2 + skill server + camera perception:
 
 ```bash
-source ~/ur_ws/install/setup.bash
+cd ~/workspaces/ur_gz
+source /opt/ros/humble/setup.bash
+source install/setup.bash
 ros2 launch ur_llm_planner sim.launch.py              # UR3e (mặc định)
 # ros2 launch ur_llm_planner sim.launch.py ur_type:=ur3
 ```
 
 Đợi đến khi log hiện dòng `Skill server san sang`.
 
-**Terminal 2** — LLM planner (chế độ nhập lệnh bằng bàn phím):
+**Terminal 2** — chạy 9Router (giữ terminal này mở):
 
 ```bash
-source ~/ur_ws/install/setup.bash
+9router
+```
+
+**Terminal 3** — LLM planner (nhập yêu cầu tại dấu nhắc `>>>`):
+
+```bash
+cd ~/workspaces/ur_gz
+source /opt/ros/humble/setup.bash
+source install/setup.bash
 export NINEROUTER_API_KEY=<api_key>
-ros2 run ur_llm_planner llm_planner_node.py --ros-args -p llm.model:=<ten_model>
+ros2 run ur_llm_planner llm_planner_node.py --ros-args \
+  --params-file src/ur_llm_planner/config/llm.yaml
 ```
 
 Rồi gõ lệnh:
@@ -240,12 +267,20 @@ Ví dụ kết quả:
 
 ```
 [Command] Đưa khối màu đỏ vào vùng B.
-[LLM] {"plan": [{"skill": "pick", "object": "red_cube"}, {"skill": "place", "object": "red_cube", "zone": "zone_b"}, {"skill": "home"}]}
-[Validator] Ke hoach hop le: pick(red_cube) -> place(red_cube, zone_b) -> home()
+[LLM] {"plan": [{"skill": "pick", "object": "blue_cube"}, {"skill": "place", "object": "blue_cube", "zone": "zone_tmp"}, {"skill": "pick", "object": "red_cube"}, {"skill": "place", "object": "red_cube", "zone": "zone_b"}, {"skill": "home"}]}
+[Validator] Ke hoach hop le: pick(blue_cube) -> place(blue_cube, zone_tmp) -> pick(red_cube) -> place(red_cube, zone_b) -> home()
 [Executor] (1/3) pick(red_cube) ...
            -> SUCCESS: pick(red_cube) thanh cong
 ...
 [Result] SUCCESS
+```
+
+**Terminal 4 (tùy chọn)** — xem ảnh RGB mà perception đang sử dụng:
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/workspaces/ur_gz/install/setup.bash
+ros2 run rqt_image_view rqt_image_view /overhead_camera/image
 ```
 
 ### 3.1. Các cách gửi lệnh khác
@@ -259,8 +294,8 @@ ros2 run ur_llm_planner llm_planner_node.py --ros-args -p llm.model:=<ten_model>
 
 # Kiểm thử Validator/Executor không qua LLM: gửi thẳng kế hoạch JSON
 ros2 topic pub --once /plan_json std_msgs/msg/String \
-  "{data: '{\"plan\": [{\"skill\": \"pick\", \"object\": \"green_cube\"}]}'}"
-#  -> [Validator] Ke hoach bi tu choi: object 'green_cube' khong ton tai
+  "{data: '{\"plan\": [{\"skill\": \"pick\", \"object\": \"orange_cube\"}]}'}"
+#  -> [Validator] Ke hoach bi tu choi: object 'orange_cube' khong ton tai
 
 # Gọi trực tiếp một skill
 ros2 service call /execute_skill ur_llm_planner/srv/ExecuteSkill "{skill: pick, object: red_cube}"
@@ -273,11 +308,15 @@ ros2 service call /execute_skill ur_llm_planner/srv/ExecuteSkill "{skill: home}"
 | Tên | Kiểu | Mô tả |
 |---|---|---|
 | `/execute_skill` | `ur_llm_planner/srv/ExecuteSkill` | Thực thi một skill (skill_server) |
-| `/scene_state` | `std_msgs/String` (JSON, latched) | Vị trí vật, vật đang cầm, vật nằm trong vùng nào |
+| `/overhead_camera/image` | `sensor_msgs/Image` | Ảnh RGB thật từ sensor Gazebo |
+| `/overhead_camera/camera_info` | `sensor_msgs/CameraInfo` | Intrinsic dùng để chiếu pixel về world |
+| `/camera/object_poses` | `geometry_msgs/PoseArray` | Pose năm cube theo đúng thứ tự `object_names` |
+| `/camera/scene_state` | `std_msgs/String` (JSON, latched) | Kết quả trực tiếp của perception |
+| `/scene_state` | `std_msgs/String` (JSON, latched) | State camera hợp nhất với vật gripper đang giữ |
 | `/nl_command` | `std_msgs/String` | Câu lệnh ngôn ngữ tự nhiên |
 | `/plan_json` | `std_msgs/String` | Kế hoạch JSON gửi thẳng (bỏ qua LLM, để kiểm thử) |
 | `/llm_planner/plan` | `std_msgs/String` | Kế hoạch đã qua validator |
-| `/llm_planner/result` | `std_msgs/String` (JSON) | Kết quả: `SUCCESS` / `FAILED` / `REJECTED` / `LLM_ERROR`, kết quả từng bước |
+| `/llm_planner/result` | `std_msgs/String` (JSON) | Kết quả task, gồm cả `PERCEPTION_UNAVAILABLE` |
 | `/skill_server/markers` | `visualization_msgs/MarkerArray` | Vùng A/B/C trên RViz (Add → By topic) |
 
 Trạng thái `/scene_state` được đưa vào prompt, nên LLM biết vật nào đang ở đâu. Nhờ vậy nó xử lý
@@ -285,10 +324,11 @@ Trạng thái `/scene_state` được đưa vào prompt, nên LLM biết vật n
 
 ## 4. Thay đổi môi trường
 
-Vị trí vật và vùng được khai báo trong `config/scene.yaml` (frame `world`, mặt bàn ở `z = 0`,
-robot đặt tại gốc tọa độ trên mặt bàn). Nếu thay đổi vị trí, hãy sửa tương ứng pose trong
+Pose object trong `config/scene.yaml` chỉ dùng để spawn/reset (frame `world`, mặt bàn `z = 0`);
+pose runtime luôn đến từ camera. Nếu thay đổi pose ban đầu, sửa tương ứng model trong
 `worlds/pick_place.sdf`. Để thêm vật hoặc vùng mới: thêm tên vào `object_names`/`zone_names`, khai
-báo `position`/`description`, và thêm model vào world. Với vật mới, cần thêm tên vào mặc định của
+báo `position`/`description`/`color`, thêm model vào world và thêm HSV range nếu dùng màu mới.
+Với vật mới, cần thêm tên vào mặc định của
 `grasp_objects` trong `urdf/ur_robotiq.urdf.xacro` để có DetachableJoint cho vật đó. Prompt và
 validator tự lấy danh sách từ parameter.
 
@@ -304,7 +344,7 @@ Tham số gripper: `gripper_open_position` (0.0), `gripper_grasp_position` (0.43
 ## 5. Kiểm thử
 
 ```bash
-cd ~/ur_ws
+cd ~/workspaces/ur_gz
 colcon test --packages-select ur_llm_planner --event-handlers console_direct+
 # hoặc chạy nhanh: python3 -m pytest src/ur_llm_planner/test -q
 ```
@@ -313,6 +353,7 @@ colcon test --packages-select ur_llm_planner --event-handlers console_direct+
 `joints`/`trajectory`/toạ độ, thiếu tham số, `place` trước `pick`, `pick` hai lần, kế hoạch rỗng,
 trích JSON từ markdown, đặt vật vào vùng bị chiếm, và đổi chỗ qua `zone_tmp`.
 `test/test_student.py` kiểm tra bảng P → zone A/B/C, xử lý MSSV không hợp lệ, và nội dung prompt.
+`test/test_perception.py` kiểm tra đủ năm màu, phép chiếu camera và phân loại zone.
 
 ## 6. Xử lý lỗi thường gặp
 
@@ -320,6 +361,8 @@ trích JSON từ markdown, đặt vật vào vùng bị chiếm, và đổi ch�
 - `LLM_ERROR: HTTP 401`: sai hoặc thiếu API key (`NINEROUTER_API_KEY`).
 - `LLM_ERROR: Chua cau hinh llm.model`: chưa truyền `-p llm.model:=...`.
 - `Service /execute_skill chua san sang`: terminal 1 chưa chạy xong. Đợi dòng `Skill server san sang`.
+- `PERCEPTION_UNAVAILABLE`: kiểm tra `/overhead_camera/image`, `/overhead_camera/camera_info` và
+  `ros2 topic echo --once --full-length /scene_state`; cần `camera_ready: true`.
 - `package 'robotiq_description' not found`: chưa cài `ros-humble-robotiq-description`.
 - `Action /gripper_controller/follow_joint_trajectory chua san sang`: `gripper_controller` chưa
   chạy. Kiểm tra bằng `ros2 control list_controllers`.

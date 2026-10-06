@@ -51,6 +51,7 @@ install(TARGETS skill_server
 # Module Python (LLM client, prompt, plan validator) + node Python
 ament_python_install_package(llm_planner)
 install(PROGRAMS
+  scripts/camera_perception_node.py
   scripts/llm_planner_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
@@ -66,6 +67,10 @@ if(BUILD_TESTING)
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   )
   ament_add_pytest_test(test_student test/test_student.py
+    PYTHON_EXECUTABLE python3
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  )
+  ament_add_pytest_test(test_perception test/test_perception.py
     PYTHON_EXECUTABLE python3
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   )

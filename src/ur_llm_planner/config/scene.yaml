@@ -11,7 +11,7 @@
 
     cube_size: 0.04
 
-    object_names: ["red_cube", "yellow_cube", "blue_cube"]
+    object_names: ["red_cube", "yellow_cube", "blue_cube", "green_cube", "purple_cube"]
     objects:
       red_cube:
         color: "red"
@@ -24,7 +24,15 @@
       blue_cube:
         color: "blue"
         description: "khoi lap phuong mau xanh duong / blue cube"
-        position: [0.295, -0.052, 0.020]
+        position: [0.212, 0.212, 0.020]  # demo: zone_b dang bi blue_cube chiem
+      green_cube:
+        color: "green"
+        description: "khoi lap phuong mau xanh la / green cube"
+        position: [0.390, -0.170, 0.020]
+      purple_cube:
+        color: "purple"
+        description: "khoi lap phuong mau tim / purple cube"
+        position: [0.400, -0.300, 0.020]
 
     zone_names: ["zone_a", "zone_b", "zone_c", "zone_tmp"]
     zones:
@@ -39,6 +47,15 @@
         position: [0.103, 0.282, 0.0]
       # Vung tam: dat tam vat khi vung dich dang bi vat khac chiem (vd: doi cho 2 vat)
       zone_tmp:
-        description: "vung tam / temporary zone - chi dung de tam dat vat khi vung dich bi chiem"
+        description: "vi tri tam tren ban / temporary position - chi dung khi vung dich bi chiem"
         position: [0.020, -0.300, 0.0]
     zone_size: 0.08
+
+    camera:
+      position: [0.15, 0.0, 1.20]
+      image_topic: "/overhead_camera/image"
+      info_topic: "/overhead_camera/camera_info"
+    perception:
+      min_blob_area: 120
+      max_blob_area: 1800
+      smoothing: 0.35
