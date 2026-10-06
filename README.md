@@ -100,14 +100,6 @@ colcon test --packages-select ur_llm_planner --event-handlers console_direct+
 colcon test-result --test-result-base build/ur_llm_planner/test_results --verbose
 ```
 
-Hiện có **46 test**: 27 test Plan Validator, 16 test nhiệm vụ MSSV và 3 test perception.
-
-## Liên kết nộp bài
-
-- Source code: nhánh [`assignments_3`](https://github.com/Shion1207/UR_Robot_Drawing/tree/assignments_3)
-- Video demo: **TODO — bổ sung liên kết sau khi upload**
-- Báo cáo LaTeX local: `report_week3.tex` (không commit lên GitHub theo `.gitignore`)
-
 ## Lưu ý bảo mật
 
 Không ghi API key vào `config/llm.yaml` hoặc commit lên Git. Khai báo key bằng biến môi trường
