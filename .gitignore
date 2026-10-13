@@ -1,0 +1,31 @@
+# ROS 2 build output
+build/
+install/
+log/
+
+# Dependency overlay chỉ dùng trên máy cục bộ
+vendor/
+
+# Báo cáo và tài liệu nộp riêng
+report/
+*.tex
+*.pdf
+*.aux
+*.fls
+*.fdb_latexmk
+*.out
+*.toc
+*.synctex.gz
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# IDE và hệ điều hành
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
