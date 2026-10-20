@@ -21,6 +21,8 @@ report/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+*.pt
+runs/
 
 # IDE và hệ điều hành
 .vscode/

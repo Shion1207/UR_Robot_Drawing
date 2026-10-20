@@ -2,7 +2,7 @@
 <package format="3">
   <name>assign4_bringup</name>
   <version>0.1.0</version>
-  <description>TurtleBot 4 simulation, SLAM, localization, and Nav2 launch files for assignment 4.</description>
+  <description>TurtleBot 4 simulation, SLAM, autonomous Nav2 waypoints, and YOLO object detection.</description>
   <maintainer email="student@example.com">Student</maintainer>
   <license>Apache-2.0</license>
 
@@ -10,15 +10,20 @@
 
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>nav2_map_server</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>teleop_twist_keyboard</exec_depend>
   <exec_depend>turtlebot4_ignition_bringup</exec_depend>
   <exec_depend>turtlebot4_navigation</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

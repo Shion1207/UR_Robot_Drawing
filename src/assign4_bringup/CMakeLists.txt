@@ -9,7 +9,11 @@ install(
 )
 
 install(
-  PROGRAMS scripts/auto_explore.py scripts/wasd_teleop.py
+  PROGRAMS
+    scripts/auto_explore.py
+    scripts/wasd_teleop.py
+    scripts/waypoint_navigator.py
+    scripts/yolo_detector.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

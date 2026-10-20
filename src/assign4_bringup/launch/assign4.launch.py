@@ -8,9 +8,11 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    GroupAction,
     IncludeLaunchDescription,
     OpaqueFunction,
     SetEnvironmentVariable,
+    TimerAction,
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -49,18 +51,45 @@ def _simulator_node(context, assignment_share, tb4_sim_share, ros_ign_share):
     else:
         world_file = tb4_sim_share / 'worlds' / f'{world_name}.sdf'
 
-    ign_args = f'{world_file} -r -v 4'
+    # Start the server separately so a slow / broken Qt GUI cannot prevent the
+    # world from being created. This also removes the startup deadlock where
+    # robot spawners wait forever at "Requesting list of world names".
+    server_args = f'{world_file} -r -v 4 -s'
     if headless:
-        ign_args += ' -s --headless-rendering'
-    else:
-        ign_args += f' --gui-config {tb4_sim_share}/gui/{model_name}/gui.config'
+        server_args += ' --headless-rendering'
 
-    return [IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(str(ros_ign_share / 'launch' / 'ign_gazebo.launch.py')),
-        launch_arguments={
-            'ign_args': ign_args,
-        }.items(),
-    )]
+    server = GroupAction(
+        scoped=True,
+        actions=[IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                str(ros_ign_share / 'launch' / 'ign_gazebo.launch.py')),
+            launch_arguments={
+                'gz_args': server_args,
+                'on_exit_shutdown': 'true',
+            }.items(),
+        )],
+    )
+    actions = [server]
+
+    if not headless:
+        gui_args = (
+            f'-g -v 4 --gui-config '
+            f'{tb4_sim_share}/gui/{model_name}/gui.config'
+        )
+        gui = GroupAction(
+            scoped=True,
+            actions=[IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    str(ros_ign_share / 'launch' / 'ign_gazebo.launch.py')),
+                launch_arguments={
+                    'gz_args': gui_args,
+                    'on_exit_shutdown': 'false',
+                }.items(),
+            )],
+        )
+        actions.append(TimerAction(period=2.0, actions=[gui]))
+
+    return actions
 
 
 def generate_launch_description():
@@ -98,6 +127,10 @@ def generate_launch_description():
             str(create_plugins_share / 'lib'),
         ]),
     )
+
+    # The vendored Qt plugins do not contain the Wayland platform plugin.
+    # Ubuntu's XWayland support is reliable for both Gazebo and RViz.
+    qt_platform = SetEnvironmentVariable('QT_QPA_PLATFORM', 'xcb')
 
     simulator = OpaqueFunction(
         function=_simulator_node,
@@ -220,6 +253,7 @@ def generate_launch_description():
         ),
         resource_path,
         gui_plugin_path,
+        qt_platform,
         # Start RViz before turtlebot4_spawn.launch.py sets its own `rviz`
         # launch configuration to false.  Included launch descriptions share
         # the launch context, so evaluating this at the end would incorrectly

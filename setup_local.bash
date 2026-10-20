@@ -11,6 +11,10 @@ if [[ $- == *u* ]]; then
 fi
 source /opt/ros/humble/setup.bash
 
+# Gazebo / RViz use vendored Qt plugins that do not provide the Wayland
+# backend. Force XCB through XWayland to avoid a black Gazebo window.
+export QT_QPA_PLATFORM=xcb
+
 _assign4_vendor="${_assign4_root}/vendor/opt/ros/humble"
 if [[ -d "${_assign4_vendor}" ]]; then
   export AMENT_PREFIX_PATH="${_assign4_vendor}:${AMENT_PREFIX_PATH:-}"
