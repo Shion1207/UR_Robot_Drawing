@@ -46,8 +46,8 @@ def _simulator_node(context, assignment_share, tb4_sim_share, ros_ign_share):
     world_name = LaunchConfiguration('world').perform(context)
     model_name = LaunchConfiguration('model').perform(context)
     headless = LaunchConfiguration('headless').perform(context).lower() == 'true'
-    if world_name == 'small_room':
-        world_file = assignment_share / 'worlds' / 'small_room.sdf'
+    if world_name in ('small_room', 'gesture_arena'):
+        world_file = assignment_share / 'worlds' / f'{world_name}.sdf'
     else:
         world_file = tb4_sim_share / 'worlds' / f'{world_name}.sdf'
 
@@ -225,8 +225,8 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'world',
             default_value='small_room',
-            choices=['small_room', 'depot', 'maze', 'warehouse'],
-            description='Ignition world. small_room is the compact assignment world.',
+            choices=['small_room', 'gesture_arena', 'depot', 'maze', 'warehouse'],
+            description='small_room for mapping; gesture_arena is open space for hand gesture demos.',
         ),
         DeclareLaunchArgument(
             'model',

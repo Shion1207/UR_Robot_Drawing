@@ -1,292 +1,204 @@
-# TurtleBot 4 — SLAM, Nav2 tự động và nhận diện YOLO
+# Bài thực hành 06 — Điều khiển TurtleBot 4 bằng cử chỉ tay
 
-Workspace ROS 2 Humble mô phỏng **TurtleBot 4** trong Gazebo, xây dựng bản đồ bằng
-**SLAM Toolbox**, định vị bằng **AMCL**, tự động đi qua nhiều điểm bằng **Nav2** và nhận diện
-vật thể từ camera RGB bằng **YOLO**.
+Hệ thống giao tiếp phi ngôn ngữ: đọc **webcam laptop/USB** bằng OpenCV, nhận diện bàn tay bằng
+**MediaPipe Gesture Recognizer**, gửi kết quả qua ROS 2 để điều khiển **TurtleBot 4 trong Gazebo**.
+Robot chỉ thực hiện hành vi sau khi người dùng chọn và xác nhận bằng ngón cái.
 
-Môi trường mặc định là phòng `small_room` kích thước 8 × 6 m, có ba vật cản bất đối xứng và
-các lối đi đủ rộng để thực hiện mapping và navigation. Bản đồ đã lưu nằm tại
-`src/assign4_bringup/maps/map.yaml` và `map.pgm`.
+Nhánh nộp bài: **`assignments_6`**. Package ROS 2 tiếp tục mang tên `assign4_bringup` để sử dụng
+lại phần mô phỏng của các tuần trước. Bài 6 chạy chế độ simulation, không cần map hoặc Nav2.
 
-## Chức năng đã thực hiện
+## Chức năng
 
-- Khởi chạy TurtleBot 4 và môi trường `small_room` trong Gazebo.
-- Publish và kiểm tra các topic cơ bản: `/scan`, `/odom`, `/cmd_vel`.
-- Quan sát RobotModel, TF, LaserScan, bản đồ và costmap trên RViz2.
-- Điều khiển robot bằng WASD hoặc các phím mũi tên.
-- Xây dựng và lưu bản đồ bằng SLAM Toolbox.
-- Nạp lại bản đồ và định vị robot bằng Map Server + AMCL.
-- Đặt Nav2 Goal để robot tự lập đường, bám đường và tránh vật cản.
-- ROS 2 Node tự gửi tuần tự ba goal cho action `/navigate_to_pose`.
-- Hiển thị ba điểm mục tiêu trên RViz qua topic `/waypoints`.
-- ROS 2 Node nhận ảnh OAK-D, chạy YOLO và vẽ bounding box, class, confidence.
-- Publish ảnh nhận diện trên `/yolo/annotated_image` và in kết quả ra terminal.
-- Hỗ trợ nhả robot khỏi dock trước khi localization/navigation.
+- Nhận 6 cử chỉ: Wave, Pointing Up, Victory, Thumb Up, Open Palm, Closed Fist.
+- Hiển thị landmark, tên cử chỉ, confidence và trạng thái điều khiển trên ảnh webcam.
+- Chọn hành vi, xác nhận và thực hiện một lần: tiến–lùi 4 chu kỳ, vòng tròn hoặc xoay chào.
+- Lọc cử chỉ không ổn định; giữ nguyên ngón cái không kích hoạt lặp lại hành vi.
+- Dừng/hủy bằng cử chỉ, dừng khi mất tay/webcam hoặc thiếu dữ liệu cảm biến.
+- Dùng odometry để đo quãng đường/góc quay và LiDAR để dừng trước vật cản.
 
-## Cấu trúc thư mục
+## Yêu cầu và cài đặt
 
-```text
-.
-|-- scripts/
-|   |-- build.bash
-|   |-- check_topics.bash
-|   |-- install_yolo_deps.bash
-|   |-- run.bash
-|   |-- run_autonomy.bash
-|   |-- save_map.bash
-|   |-- teleop.bash
-|   `-- undock.bash
-|-- setup_local.bash
-`-- src/assign4_bringup/
-    |-- config/
-    |   |-- slam.yaml
-    |   |-- localization.yaml
-    |   |-- nav2.yaml
-    |   `-- autonomy.yaml
-    |-- launch/
-    |   |-- assign4.launch.py
-    |   `-- autonomy.launch.py
-    |-- maps/
-    |   |-- map.pgm
-    |   `-- map.yaml
-    |-- rviz/
-    |-- scripts/
-    |   |-- auto_explore.py
-    |   |-- wasd_teleop.py
-    |   |-- waypoint_navigator.py
-    |   `-- yolo_detector.py
-    `-- worlds/small_room.sdf
-```
+- Ubuntu 22.04, ROS 2 Humble Desktop; TurtleBot 4 Simulator đã chạy được như bài trước.
+- Webcam xuất hiện trong Ubuntu dưới dạng `/dev/video0` hoặc thiết bị tương ứng.
+- Python 3, `python3-venv`, `curl` và `cv_bridge`.
 
-## Yêu cầu
-
-- Ubuntu 22.04.
-- ROS 2 Humble Desktop.
-- TurtleBot 4 Simulator, TurtleBot 4 Navigation.
-- SLAM Toolbox, Navigation2 và RViz2.
-- Python 3, `cv_bridge`, OpenCV và Ultralytics YOLO.
-
-Cài các package cần thiết:
+Nếu cần bổ sung các gói cho môi trường ROS 2 Humble đã cài:
 
 ```bash
 sudo apt update
-sudo apt install \
-  ros-humble-turtlebot4-simulator \
-  ros-humble-turtlebot4-navigation \
-  ros-humble-turtlebot4-desktop \
-  ros-humble-slam-toolbox \
-  ros-humble-navigation2 \
-  ros-humble-nav2-bringup \
-  ros-humble-nav2-simple-commander \
-  ros-humble-cv-bridge \
-  ros-humble-teleop-twist-keyboard
+sudo apt install python3-venv curl ros-humble-cv-bridge \
+  ros-humble-turtlebot4-simulator ros-humble-turtlebot4-navigation
 ```
 
-Cài thư viện YOLO. Script giữ NumPy ở phiên bản 1.x để tương thích với `cv_bridge` của ROS 2
-Humble:
+Tải nhánh bài 6 và build:
 
 ```bash
-./scripts/install_yolo_deps.bash
-```
-
-## Tải mã nguồn và build
-
-```bash
-git clone -b assignments_4 \
-  https://github.com/Shion1207/UR_Robot_Drawing.git assign4
+mkdir -p ~/workspaces
+cd ~/workspaces
+git clone -b assignments_6 https://github.com/Shion1207/UR_Robot_Drawing.git assign4
 cd assign4
+./scripts/install_gesture_deps.bash
 ./scripts/build.bash
 ```
 
-Sau khi sửa source, chạy lại `./scripts/build.bash` trước khi khởi động chương trình.
+Nếu đã có workspace `~/workspaces/assign4` đang chạy thì không clone đè lên thư mục đó.
+Script cài đặt tạo `.venv-gesture` riêng, cài MediaPipe 0.10.21, OpenCV contrib 4.11, NumPy 1.x
+và tải model chính thức Google vào `src/assign4_bringup/models/gesture_recognizer.task`.
+Không cần cài YOLO cho bài này. Sau khi sửa source, chạy lại `./scripts/build.bash`.
 
-## Kiểm tra mô phỏng và topic
+## Chạy chương trình
 
-Terminal 1:
+Dừng các phiên Nav2, teleop và autonomy cũ bằng Ctrl+C trước khi chạy. Chỉ dùng một bộ điều
+khiển vận tốc tại một thời điểm.
 
-```bash
-cd ~/workspaces/assign4
-./scripts/run.bash simulation
-```
-
-Terminal 2:
-
-```bash
-cd ~/workspaces/assign4
-./scripts/check_topics.bash
-```
-
-Kết quả hợp lệ cần có dữ liệu trên `/scan`, `/odom`; topic `/cmd_vel` phải tồn tại.
-
-## Xây dựng bản đồ
-
-Terminal 1:
+**Terminal 1 — khởi động Gazebo:**
 
 ```bash
 cd ~/workspaces/assign4
-./scripts/run.bash mapping
+./scripts/run.bash simulation world:=gesture_arena model:=lite rviz:=false
 ```
 
-Terminal 2:
+Chờ thấy `Configured and activated diffdrive_controller`.
+
+**Terminal 2 — chuẩn bị robot và mở webcam:**
 
 ```bash
 cd ~/workspaces/assign4
-./scripts/teleop.bash
+./scripts/prepare_gesture_demo.bash && ./scripts/run_gestures.bash
 ```
 
-Phím điều khiển:
+Script chuẩn bị nhả robot khỏi dock, dọn model dock trong sân `gesture_arena`, và đặt
+`safety_override=backup_only` để cho phép lùi trên sân mô phỏng phẳng. Các kiểm tra LiDAR
+trước/sau và các bảo vệ khác vẫn hoạt động. Chỉ dùng cấu hình này cho mô phỏng của bài thực
+hành; không áp dụng script chuẩn bị lên robot thật.
 
-- `W` hoặc `↑`: tiến.
-- `S` hoặc `↓`: lùi.
-- `A` hoặc `←`: quay trái.
-- `D` hoặc `→`: quay phải.
-- `Space` hoặc `X`: dừng ngay.
-- `+`/`-`: tăng hoặc giảm tốc độ.
-- `Q`: thoát teleop.
-
-Sau khi robot đã khảo sát đủ phòng và quay lại các vùng cũ để khép vòng, dừng robot rồi mở
-terminal thứ ba:
+Nếu camera 0 không phải webcam RGB:
 
 ```bash
-cd ~/workspaces/assign4
-./scripts/save_map.bash
+ls -l /dev/video*
+./scripts/run_gestures.bash camera_index:=2
 ```
 
-Lệnh trên ghi đè hai tệp:
+Với WSL/container, cần chuyển tiếp webcam để Ubuntu thấy `/dev/video*` trước.
+
+## Bảng cử chỉ và cách điều khiển
+
+| Cử chỉ | Nhãn ROS | Tác dụng |
+|---|---|---|
+| Xòe tay, đưa ngang trái–phải–trái | `Wave` | Chọn robot xoay trái–phải chào |
+| Giơ một ngón trỏ | `Pointing_Up` | Chọn tiến–lùi 4 chu kỳ (8 đoạn), 0,10 m/đoạn |
+| Giơ hai ngón chữ V | `Victory` | Chọn đi một vòng tròn bán kính 0,40 m |
+| Giơ ngón cái | `Thumb_Up` | Xác nhận và thực hiện hành vi đã chọn |
+| Xòe bàn tay đứng yên | `Open_Palm` | Dừng ngay và xóa lựa chọn |
+| Nắm tay | `Closed_Fist` | Hủy hành vi và trở về chờ |
+
+Ví dụ: **chữ V → đợi `SELECTED: circle` → giơ ngón cái → `RUNNING: circle`**.
+Chỉ giơ chữ V hoặc ngón trỏ thì robot chưa chạy. Phải xác nhận trong 8 giây, nếu không cần chọn lại.
+
+Giữ ngón cái trong khung hình khi robot chạy để duy trì tín hiệu. Bỏ tay ra quá 0,9 giây làm
+robot dừng. Sau khi dừng/hủy/hoàn thành, muốn chạy lại phải chọn rồi xác nhận lại.
+
+Để vẫy tay, xòe tay và di chuyển cổ tay ngang qua lại 1–2 giây; đợi `SELECTED: greeting`, rồi
+chuyển ngay sang ngón cái. Wave được nhận từ chuyển động qua thời gian, còn Open Palm đứng yên
+là lệnh dừng. Chỉ đưa một bàn tay vào khung hình để tránh lệnh không rõ ràng.
+
+## Node, topic và cấu trúc source
 
 ```text
-src/assign4_bringup/maps/map.yaml
-src/assign4_bringup/maps/map.pgm
+Webcam -> gesture_recognition_node -> /detected_gesture
+                                      |
+                                      v
+                              robot_behavior_node -> /cmd_vel -> TurtleBot 4
+                                ^           |
+                          /scan, /odom      +-> /gesture_behavior/status
 ```
 
-## Localization và navigation
+| Topic | Kiểu dữ liệu | Nội dung |
+|---|---|---|
+| `/detected_gesture` | `std_msgs/msg/String` | Nhãn đã lọc hoặc `None` |
+| `/cmd_vel` | `geometry_msgs/msg/Twist` | Vận tốc tuyến tính/góc |
+| `/scan` | `sensor_msgs/msg/LaserScan` | Khoảng cách vật cản |
+| `/odom` | `nav_msgs/msg/Odometry` | Vị trí/hướng và chuyển động thực tế |
+| `/gesture/annotated_image` | `sensor_msgs/msg/Image` | Webcam có landmark, nhãn và confidence |
+| `/gesture_behavior/status` | `std_msgs/msg/String` | Trạng thái chọn/chạy/dừng/hoàn thành |
 
-Dừng hoàn toàn phiên mapping trước khi chạy navigation:
+Các tệp chính của tuần 6:
+
+```text
+requirements-gesture.txt
+scripts/install_gesture_deps.bash
+scripts/prepare_gesture_demo.bash
+scripts/run_gestures.bash
+src/assign4_bringup/config/gesture.yaml
+src/assign4_bringup/launch/gesture.launch.py
+src/assign4_bringup/scripts/gesture_recognition_node.py
+src/assign4_bringup/scripts/robot_behavior_node.py
+src/assign4_bringup/scripts/gesture_logic.py
+src/assign4_bringup/worlds/gesture_arena.sdf
+tests/test_gesture_logic.py
+tests/test_gesture_ros.py
+```
+
+Các tệp mô phỏng, build/setup và Undock được kế thừa từ các tuần trước. Tham số nhận diện,
+vận tốc, chiều dài đoạn, bán kính vòng tròn và watchdog nằm trong `config/gesture.yaml`.
+
+## Cơ chế an toàn và kiểm tra
+
+- Ngưỡng confidence 0,65; cử chỉ chọn/xác nhận phải ổn định ít nhất 0,25 giây.
+- Open Palm và Closed Fist không phải chờ bộ lọc thời gian.
+- Mất cử chỉ hợp lệ 0,9 giây hoặc thiếu `/scan`/`/odom` 3 giây: dừng và xóa hành vi.
+- Vật cản trước/sau gần hơn 0,50 m hoặc quanh robot khi quay gần hơn 0,30 m: dừng.
+- Không có chuyển động đủ lớn trong 10 giây: dừng, tránh mắc kẹt ở giới hạn an toàn.
+- Watchdog dùng đồng hồ thực; độ dài/góc hành vi dùng odometry để phù hợp khi Gazebo chạy chậm.
+
+Chạy kiểm tra logic và giao tiếp ROS 2 (test ROS dùng domain riêng):
 
 ```bash
 cd ~/workspaces/assign4
-./scripts/run.bash navigation model:=lite
+source setup_local.bash
+python3 -m unittest discover -s tests -v
 ```
 
-TurtleBot 4 simulator khởi tạo robot trên dock. Sau khi Gazebo và các node đã sẵn sàng, mở
-terminal khác và nhả dock:
+## Xử lý tình huống thường gặp
+
+**`IDLE: selection expired`:** mới chọn hành vi nhưng chưa xác nhận trong 8 giây. Nắm tay,
+chọn lại và đổi sang ngón cái.
+
+**Kẹt ở bước chuẩn bị sau `Undock ... SUCCEEDED`:** có thể lệnh đặt tham số bị mất phản hồi.
+Nhấn Ctrl+C riêng Terminal 2, giữ nguyên Gazebo rồi kiểm tra:
 
 ```bash
-cd ~/workspaces/assign4
-./scripts/undock.bash
+source setup_local.bash
+timeout 15s ros2 param get /motion_control safety_override
 ```
 
-Trong RViz2:
+Nếu đã là `backup_only`, chỉ chạy `./scripts/run_gestures.bash`; không chạy lại bước chuẩn bị
+vì dock đã được dọn. Nếu vẫn là `none`, đặt lại bằng `timeout 15s ros2 param set /motion_control
+safety_override backup_only` rồi kiểm tra giá trị trước khi chạy nhận diện.
 
-1. Chọn **2D Pose Estimate** và đặt đúng vị trí/hướng hiện tại của robot.
-2. Chờ RobotModel và LaserScan khớp với bản đồ.
-3. Chọn **Nav2 Goal**, nhấn vào vùng trống và kéo mũi tên để đặt hướng đích.
-4. Chờ robot hoàn thành goal trước khi đặt goal tiếp theo.
-5. Không dùng teleop trong lúc Nav2 đang điều khiển robot.
-
-Goal nên cách tường, dock và vật cản ít nhất khoảng 0,4–0,5 m. Cấu hình `model:=lite` giúp giảm
-tải mô phỏng; có thể bỏ đối số này nếu máy đủ mạnh và cần dùng mô hình TurtleBot 4 Standard.
-
-## Chạy tự động qua ba goal và nhận diện YOLO
-
-Terminal 1, khởi động Gazebo, AMCL và Nav2:
+**Không có cửa sổ OpenCV:** dùng topic ảnh để quan sát:
 
 ```bash
-cd ~/workspaces/assign4
-./scripts/run.bash navigation model:=lite
+# Terminal 2
+./scripts/run_gestures.bash show_window:=false
+# Terminal 3
+source setup_local.bash
+rqt_image_view /gesture/annotated_image
 ```
 
-Terminal 2, nhả robot khỏi dock:
+**`STOP: odometry / LiDAR not ready or stale`:** chờ mô phỏng/cảm biến ổn định rồi chọn và xác
+nhận lại. **`STOP: obstacle too close`:** kiểm tra khoảng trống và bước nhả/dọn dock.
 
-```bash
-cd ~/workspaces/assign4
-./scripts/undock.bash
-```
+## Nội dung video và file nộp
 
-Trong RViz, dùng **2D Pose Estimate** đặt đúng vị trí và hướng ban đầu. Chỉ chạy bước tiếp theo
-khi LaserScan khớp với tường trên bản đồ.
+Video quay webcam cùng Gazebo, thể hiện chọn/xác nhận, tiến–lùi đủ 4 chu kỳ, vòng tròn, xoay
+chào, xòe tay dừng, nắm tay hủy và bỏ tay khỏi webcam để dừng. Không điều khiển robot bằng phím
+trong demo. Video Drive công khai và PDF báo cáo được nộp riêng.
 
-Terminal 3, chạy đồng thời Node điều hướng và Node YOLO:
+Nhánh GitHub chứa source, launch/config, world, script cài đặt/chạy và tests. `.gitignore`
+loại `build/`, `install/`, `log/`, `vendor/`, `.venv-gesture/`, model tải về, báo cáo và cache.
+Máy mới tải lại model bằng script cài đặt, không cần upload môi trường Python lên GitHub.
 
-```bash
-cd ~/workspaces/assign4
-./scripts/run_autonomy.bash
-```
-
-Node điều hướng chờ `/amcl_pose`, sau đó tự gửi lần lượt ba goal trong
-`src/assign4_bringup/config/autonomy.yaml`. Không cần và không được bấm **Nav2 Goal** trong lúc
-chuỗi tự động đang chạy. Các goal mặc định là:
-
-| Điểm | x (m) | y (m) | yaw (rad) |
-|---|---:|---:|---:|
-| Goal 1 | 2.6 | -1.9 | 1.57 |
-| Goal 2 | 2.7 | 2.1 | 3.14 |
-| Goal 3 | -1.0 | 2.2 | -1.57 |
-
-YOLO đọc camera từ `/oakd/rgb/preview/image_raw`, mở cửa sổ OpenCV và publish ảnh kết quả lên
-`/yolo/annotated_image`. Nhấn `Q` khi cửa sổ YOLO đang được chọn để chỉ đóng phần hiển thị.
-
-Môi trường `small_room` có thêm một mô hình ghế gần phía bắc phòng để thử nhận diện. Đây là vật
-cản mới chưa có trong bản đồ tĩnh; local costmap của Nav2 sẽ nhận nó từ LiDAR và tránh khi chạy.
-
-Nếu chỉ cần chạy một phần:
-
-```bash
-# Chỉ chạy ba navigation goal
-./scripts/run_autonomy.bash yolo:=false
-
-# Chỉ chạy YOLO
-./scripts/run_autonomy.bash navigation:=false
-
-# Không mở cửa sổ OpenCV, chỉ publish ảnh kết quả
-./scripts/run_autonomy.bash show_window:=false
-```
-
-Kiểm tra topic ảnh:
-
-```bash
-ros2 topic hz /oakd/rgb/preview/image_raw
-ros2 topic hz /yolo/annotated_image
-```
-
-Lần đầu dùng `yolov8n.pt`, Ultralytics có thể tải weight từ Internet. Có thể truyền đường dẫn
-đến weight đã tải sẵn:
-
-```bash
-./scripts/run_autonomy.bash model_path:=/duong/dan/yolov8n.pt
-```
-
-Trên máy hiện tại, script tự sử dụng `~/yolo_project/yolov8n.pt` nếu file này tồn tại, nên không
-cần tải lại model.
-
-## Các chế độ chạy
-
-```bash
-./scripts/run.bash simulation
-./scripts/run.bash mapping
-./scripts/run.bash localization
-./scripts/run.bash navigation model:=lite
-```
-
-Có thể chọn world khác bằng launch argument, ví dụ:
-
-```bash
-./scripts/run.bash mapping world:=maze
-```
-
-Các world hỗ trợ: `small_room`, `depot`, `maze`, `warehouse`.
-
-## Thông tin bản đồ hiện tại
-
-- Kích thước: 158 × 118 ô.
-- Độ phân giải: 0,05 m/ô.
-- Origin: `[-3.95, -2.96, 0]`.
-- Ngưỡng occupied: `0.65`.
-- Ngưỡng free: `0.25`.
-
-## Lưu ý
-
-- Không chạy đồng thời nhiều phiên mapping/navigation vì có thể gây trùng controller và topic.
-- Nếu `undock.bash` báo action chưa sẵn sàng, chờ Gazebo khởi động thêm khoảng 10 giây rồi thử lại.
-- Nếu Node tự động cứ báo chưa có `/amcl_pose`, cần đặt lại **2D Pose Estimate** trong RViz.
-- Không chạy teleop đồng thời với chuỗi goal tự động vì hai nguồn cùng ghi lệnh vận tốc.
+Tài liệu: [MediaPipe Gesture Recognizer](https://ai.google.dev/edge/mediapipe/solutions/vision/gesture_recognizer/python),
+[OpenCV](https://docs.opencv.org/), [TurtleBot 4](https://turtlebot.github.io/turtlebot4-user-manual/),
+[Create 3 Safety](https://iroboteducation.github.io/create3_docs/api/safety/).

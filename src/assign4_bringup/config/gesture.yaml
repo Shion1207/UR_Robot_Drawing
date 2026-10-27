@@ -1,0 +1,26 @@
+gesture_recognition_node:
+  ros__parameters:
+    use_sim_time: false
+    camera_index: 0
+    width: 640
+    height: 480
+    fps: 10.0
+    confidence: 0.65
+    hold_seconds: 0.25
+    mirror: true
+    show_window: true
+
+robot_behavior_node:
+  ros__parameters:
+    use_sim_time: false
+    linear_speed: 0.15
+    angular_speed: 0.55
+    step_distance: 0.10
+    circle_radius: 0.40
+    gesture_timeout: 0.9
+    sensor_timeout: 3.0
+    selection_timeout: 8.0
+    phase_timeout: 240.0
+    progress_timeout: 10.0
+    stop_distance: 0.50
+    rotation_clearance: 0.30

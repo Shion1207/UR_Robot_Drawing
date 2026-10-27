@@ -1,0 +1,4 @@
+# Separate venv: do not replace the global YOLO/OpenCV installation.
+numpy>=1.26.4,<2.0
+opencv-contrib-python==4.11.0.86
+mediapipe==0.10.21

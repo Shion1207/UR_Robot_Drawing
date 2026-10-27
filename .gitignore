@@ -23,6 +23,9 @@ __pycache__/
 .pytest_cache/
 *.pt
 runs/
+.venv-gesture/
+*.task
+*.download
 
 # IDE và hệ điều hành
 .vscode/
