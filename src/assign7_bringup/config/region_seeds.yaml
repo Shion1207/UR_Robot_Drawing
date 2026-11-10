@@ -1,0 +1,17 @@
+minimum_clearance_m: 0.40
+regions:
+  - id: A
+    name: Phòng học
+    aliases: [a, khu vực a, khu a, vùng a, phòng a, phòng học]
+    seed: [-1.2, 1.4]
+    yaw: 0.0
+  - id: B
+    name: Phòng thí nghiệm
+    aliases: [b, bê, bi, khu vực b, khu vực bê, khu b, vùng b, phòng b, phòng thí nghiệm]
+    seed: [2.7, 1.9]
+    yaw: 3.14
+  - id: C
+    name: Hành lang
+    aliases: [c, xê, xi, khu vực c, khu vực xê, khu c, vùng c, hành lang, hành lang c]
+    seed: [0.0, -2.0]
+    yaw: 1.57

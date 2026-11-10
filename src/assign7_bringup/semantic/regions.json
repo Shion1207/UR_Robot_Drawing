@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "method": "clearance-filtered multi-source geodesic Voronoi",
+  "source_sha256": "90f4992feba059462edb7e889d5ac5b9900bf239bdaf0341673cee1548e61b50",
+  "resolution": 0.05,
+  "origin": [
+    -3.95,
+    -2.96,
+    0.0
+  ],
+  "width": 158,
+  "height": 118,
+  "minimum_clearance_m": 0.4,
+  "regions": [
+    {
+      "id": "A",
+      "name": "Phòng học",
+      "aliases": [
+        "a",
+        "khu vực a",
+        "khu a",
+        "vùng a",
+        "phòng a",
+        "phòng học"
+      ],
+      "goal": [
+        -1.175,
+        1.415,
+        0.0
+      ],
+      "goal_pixel": [
+        55,
+        30
+      ],
+      "clearance_m": 0.95,
+      "area_m2": 11.65
+    },
+    {
+      "id": "B",
+      "name": "Phòng thí nghiệm",
+      "aliases": [
+        "b",
+        "bê",
+        "bi",
+        "khu vực b",
+        "khu vực bê",
+        "khu b",
+        "vùng b",
+        "phòng b",
+        "phòng thí nghiệm"
+      ],
+      "goal": [
+        2.725,
+        1.915,
+        3.14
+      ],
+      "goal_pixel": [
+        133,
+        20
+      ],
+      "clearance_m": 1.0,
+      "area_m2": 6.278
+    },
+    {
+      "id": "C",
+      "name": "Hành lang",
+      "aliases": [
+        "c",
+        "xê",
+        "xi",
+        "khu vực c",
+        "khu vực xê",
+        "khu c",
+        "vùng c",
+        "hành lang",
+        "hành lang c"
+      ],
+      "goal": [
+        0.025,
+        -1.985,
+        1.57
+      ],
+      "goal_pixel": [
+        79,
+        98
+      ],
+      "clearance_m": 0.626,
+      "area_m2": 9.938
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+build/
+install/
+log/
+vendor/
+.venv/
+src/assign7_bringup/models/*
+!src/assign7_bringup/models/.gitkeep
+__pycache__/
+*.py[cod]
+report/
+recordings/
+.pytest_cache/
+*.wav
+*.aux
+*.log
+*.toc
