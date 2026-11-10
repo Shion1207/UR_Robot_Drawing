@@ -168,11 +168,6 @@ source setup_local.bash
 python3 -m unittest discover -s tests -v
 ```
 
-Quay video liên tục: bản đồ có 3 vùng → nói ít nhất 3 lệnh → terminal nhận văn bản/hiểu lệnh →
-robot tự đến đúng nơi bằng Nav2. Có một lệnh A → B (hoặc qua nhiều đích) và một lệnh vùng D để
-thể hiện xử lý lỗi. GitHub chứa source, launch/config, bản đồ gốc, ảnh phân vùng và regions.json.
-Không upload `vendor`, `.venv`, model Whisper, build/install/log, ghi âm cá nhân. Video Drive công
-khai và báo cáo PDF 1–2 trang nộp riêng sau khi có kết quả thực nghiệm.
 
 Tham khảo: [faster-whisper](https://github.com/SYSTRAN/faster-whisper),
 [Nav2 NavigateToPose](https://api.nav2.org/actions/humble/navigatetopose.html),
