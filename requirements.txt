@@ -1,0 +1,17 @@
+# Python 3.10 / ROS Humble, isolated .venv; never upgrade global packages.
+numpy==1.26.4
+opencv-python==4.11.0.86
+tensorflow-cpu==2.15.1
+keras==2.15.0
+# DeepFace/retina-face/tf-keras are installed --no-deps by install_deps.bash:
+# their metadata asks for tensorflow, but tensorflow-cpu supplies the same API.
+requests>=2.27.1,<3
+pandas>=1.5,<3
+gdown>=4.7,<6
+tqdm>=4.30,<5
+Pillow>=9,<13
+Flask>=2,<4
+flask_cors>=4,<7
+mtcnn==0.1.1
+fire>=0.4,<1
+gunicorn>=20,<24
